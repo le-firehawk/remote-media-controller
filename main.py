@@ -30,7 +30,7 @@ class controller:
 
         # TODO: Add IPv6 regex + general IPv6 support
         self.ipv4_pattern = re.compile("[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}")
-        self.ipv6_pattern = None
+        self.ipv6_pattern = re.compile("([a-fA-F0-9]{1,4}:){1,7}[a-fA-F0-9]{1,4}:")
         ## Pre-define PySimpleGUI output variables for while loop in __openWindow__()
         self.__event__, self.__values__ = True, ""
 
