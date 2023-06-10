@@ -283,7 +283,22 @@ def load_params(vals):
         elif val in ["--password", "-p"]:
             parameters['password'] = vals[i+1]
             del vals[i+1]
+    if len(parameters) == 0:
+        usage()
+        exit()
     return parameters
+
+def usage():
+    print("Usage:")
+    print(f"    {sys.argv[0]} [<option>...]")
+    print("e.g.")
+    print(f"    {sys.argv[0]} --mode ssh --ip 192.168.0.2 --port 22 --user user")
+    print("Options:")
+    print(f"    -m, --mode      [e.g. ssh]")
+    print(f"    -h, --ip        [e.g. 192.168.0.2]")
+    print(f"    -P, --port      [e.g. 22]")
+    print(f"    -u, --user      [e.g. user]")
+    print(f"    -p, --password  [e.g. password]")
 
 def main(version):
     try:
@@ -291,6 +306,7 @@ def main(version):
         controllerInstance = controller(parameters, version)
     except IndexError:
         print("Missing required parameters!")
+        usage()
 
 if __name__ == "__main__":
     ## Load version information
