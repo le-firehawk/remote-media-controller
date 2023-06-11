@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Copyright (C) 2023 le_firehawk
+# Copyright (C) 2023 le-firehawk
 
 # remote-media-controller is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
