@@ -7,7 +7,7 @@ if os.path.exists("./version.txt"):
         version = version_file.read()
 else:
     ## Use latest hardcoded version
-    version = "1.0.3"
+    version="1.0.5"
 
 try:
     setup(
