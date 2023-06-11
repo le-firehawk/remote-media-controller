@@ -8,7 +8,7 @@ if os.path.exists("./version.txt"):
 else:
     ## Use latest hardcoded version
     version="1.0.5"
-
+    
 try:
     setup(
         name="remote-media-controller",
