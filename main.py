@@ -34,6 +34,9 @@ class controller:
         ## Pre-define PySimpleGUI output variables for while loop in __openWindow__()
         self.__event__, self.__values__ = True, ""
 
+        ## Dictionary of unicode symbols (only include alterable through GUI)
+        self.__unicode_symbols__ = {"repeat_playlist": "🔁", "repeat_track": "🔂", "repeat_none": "🠂"}
+
         ## Load parameters
         self.__remoteHost__ = parameters.get("remoteHost", None)
         self.__remoteHostPort__ = parameters.get("remotePort", None)
@@ -66,7 +69,7 @@ class controller:
                 gui.Text(self.__metadata__.get("album", "Unknown Album"), key="current_album", size=(25,2))
             ], [
                 gui.Button("🔀", key="shuffle_toggle", tooltip=f"Shuffle: {self.__shuffleState__.replace(True, 'On').replace(False, 'Off')}"),
-                gui.Button("🔁", key="repeat_toggle", tooltip=f"Repeat: {self.__repeatState__.capitalize()}"),
+                gui.Button(self.__unicode_symbols__[f"repeat_{self.__repeatState__.lower()}"], key="repeat_toggle", tooltip=f"Repeat: {self.__repeatState__.capitalize()}"),
                 gui.Button("⏮︎", key="previous", tooltip="Previous Track"),
                 gui.Button("⏪︎", key="seek_back", tooltip="Seek Backwards"),
                 ## Alternate text/background colors to indicate when playback is active
@@ -109,13 +112,13 @@ class controller:
             elif self.__event__ == "repeat_toggle":
                 if self.__repeatState__ == "playlist":
                     self.__repeatState__ = "track"
-                    window["repeat_toggle"].update("🔂")
                 elif self.__repeatState__ == "track":
                     self.__repeatState__ = "none"
-                    window["repeat_toggle"].update("🠂")
                 else:
                     self.__repeatState__ = "playlist"
-                    window["repeat_toggle"].update("🔁")
+                ## Update repeat button to appropriate unicode
+                window["repeat_toggle"].update(self.__unicode_symbols__[f"repeat_{self.__repeatState__.lower()}"])
+                window["repeat_toggle"].set_tooltip(f"Repeat: {self.__repeatState__.capitalize()}")
                 self.__updateRepeatState__()
             elif self.__event__ == "play_pause":
                 ## Events parsed by __sendCommand__ function
@@ -130,7 +133,6 @@ class controller:
                 else:
                     # window["play_pause"].Widget.config(highlightcolor="white")
                     window["play_pause"].update(button_color=("white", "black"))
-
             elif self.__event__:
                 self.__updateRemoteHost__(self.__values__.get("remoteIPaddress", self.__remoteHost__))
                 self.__sendCommand__(self.__event__)
