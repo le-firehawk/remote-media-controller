@@ -15,8 +15,8 @@ e.g.
     -u, --user      [e.g. user]
     -p, --password  [e.g. password]
 
-TODO List:
----> Usage Guide
---> CMUS Remote setup (Seems obscure?)
--> IPv6 support
+## TODO List:
+- Usage Guide ^
+- CMUS Remote Setup Process Guide
+- IPv6 support
 
