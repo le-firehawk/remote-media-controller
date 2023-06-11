@@ -50,9 +50,9 @@ class controller:
         ## Repeat is assumed to be playlist
         # NOTE: Many media players do not respect playerctl's loop instructions
         # NOTE: hence, only 'track' is an effective repeat state
-        self.__repeatState__, self.__playState__ = "playlist", "paused"
+        self.__repeatState__, self.__playState__, self.__shuffleState__ = "playlist", "paused", True
 
-        self.__fetchMetadata__(include_volume=True, include_play_state=True)
+        self.__fetchMetadata__(include_volume=True, include_play_state=True, include_playback_controls=True)
         self.__openWindow__()
 
     def __openWindow__(self):
@@ -68,7 +68,7 @@ class controller:
             ], [
                 gui.Text(self.__metadata__.get("album", "Unknown Album"), key="current_album", size=(25,2))
             ], [
-                gui.Button("🔀", key="shuffle_toggle", tooltip=f"Shuffle: {self.__shuffleState__.replace(True, 'On').replace(False, 'Off')}"),
+                gui.Button("🔀", key="shuffle_toggle", tooltip=f"Shuffle: {str(self.__shuffleState__).replace('True', 'On').replace('False', 'Off')}"),
                 gui.Button(self.__unicode_symbols__[f"repeat_{self.__repeatState__.lower()}"], key="repeat_toggle", tooltip=f"Repeat: {self.__repeatState__.capitalize()}"),
                 gui.Button("⏮︎", key="previous", tooltip="Previous Track"),
                 gui.Button("⏪︎", key="seek_back", tooltip="Seek Backwards"),
@@ -120,6 +120,11 @@ class controller:
                 window["repeat_toggle"].update(self.__unicode_symbols__[f"repeat_{self.__repeatState__.lower()}"])
                 window["repeat_toggle"].set_tooltip(f"Repeat: {self.__repeatState__.capitalize()}")
                 self.__updateRepeatState__()
+            elif self.__event__ == "shuffle_toggle":
+                self.__shuffleState__ = not self.__shuffleState__
+                ## Update shuffle tooltip indicator
+                window["shuffle_toggle"].set_tooltip(f"Shuffle: {str(self.__shuffleState__).replace('True', 'On').replace('False', 'Off')}")
+                self.__sendCommand__(self.__event__)
             elif self.__event__ == "play_pause":
                 ## Events parsed by __sendCommand__ function
                 self.__sendCommand__(self.__event__)
@@ -203,7 +208,11 @@ class controller:
             else:
                 command += "+"
         ## Additional commands go here
-
+        elif command == "shuffle_toggle":
+            if self.__mode__ == "cmus":
+                command = "-S"
+            else:
+                command = command.replace("_", " ")
 
         if self.__mode__ == "cmus":
             subprocess.Popen(f"cmus-remote --server {self.__remoteHost__}:{self.__remoteHostPort__} --passwd {self.__remoteHostPassword__} {command}", stdout=subprocess.PIPE, shell=True).communicate()
@@ -214,6 +223,7 @@ class controller:
         ## Load fetch options
         include_volume = kwargs.get("include_volume", False)
         include_play_state = kwargs.get("include_play_state", False)
+        include_playback_controls = kwargs.get("include_playback_controls", False)
         only_includes = kwargs.get("only_includes", False)
 
         ## Create default metadata set
@@ -228,7 +238,9 @@ class controller:
                     self.__playbackVolume__ = new_volume
             if include_play_state:
                 self.__playState__ = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl status", stdout=subprocess.PIPE, shell=True).communicate()[0].decode().lower()
-
+            if include_playback_controls:
+                self.__repeatState__, self.__shuffleState__ = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl loop; playerctl shuffle", stdout=subprocess.PIPE, shell=True).communicate()[0].decode().split("\n")[:-1]
+                self.__shuffleState__ = True if self.__shuffleState__ == "On" else False
             ## Do not make SSH requests if not required
             if not only_includes:
                 metadata = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl metadata", stdout=subprocess.PIPE, shell=True).communicate()[0].decode()
