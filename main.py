@@ -27,6 +27,7 @@ gui.theme("black")
 class controller:
     def __init__(self, parameters, version):
         self.__version__ = version
+        self.__lock_dir__ = "/tmp/remote-media-controller"
 
         # TODO: Add IPv6 regex + general IPv6 support
         self.ipv4_pattern = re.compile("[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}")
@@ -44,6 +45,13 @@ class controller:
         self.__remoteHostPassword__ = parameters.get("password", None)
         self.__mode__ = parameters.get("mode", "cmus")
 
+        ## Obtain lockfile on current host IP
+        try:
+            if not self.__getIPcontrolLock__():
+                raise Exception("Encountered unknown issue obtaining process lock")
+        except FileExistsError:
+            raise
+
         ## Default seek duration is 5 seconds
         self.__seekDuration__, self.__playbackVolume__ = "5S", 100
 
@@ -54,6 +62,28 @@ class controller:
 
         self.__fetchMetadata__(include_volume=True, include_play_state=True, include_playback_controls=True)
         self.__openWindow__()
+        self.__getIPcontrolLock__(release=True)
+
+    def __getIPcontrolLock__(self, **kwargs):
+        release_lock = kwargs.get("release", False)
+        if release_lock:
+            if os.path.exists(f"{self.__lock_dir__}/{self.__remoteHost__.replace('.', '-')}.lock"):
+                os.remove(f"{self.__lock_dir__}/{self.__remoteHost__.replace('.', '-')}.lock")
+            else:
+                raise FileNotFoundError(f"No lock for host {self.__remoteHost__} exists")
+        else:
+            if os.path.exists(f"{self.__lock_dir__}/{self.__remoteHost__.replace('.', '-')}.lock"):
+                raise FileExistsError(f"Process already has lock for host {self.__remoteHost__}")
+                return False
+            else:
+                try:
+                    os.mkdir(self.__lock_dir__)
+                except FileExistsError:
+                    pass
+
+                with open(f"{self.__lock_dir__}/{self.__remoteHost__.replace('.', '-')}.lock", "wb") as lock_file:
+                    lock_file.write(b"")
+                return True
 
     def __openWindow__(self):
         self.__layout__ = [
@@ -160,7 +190,10 @@ class controller:
             return
 
         if self.ipv4_pattern.match(host):
-            self.__remoteHost__ = host
+            if self.__remoteHost__ != host:
+                self.__getIPcontrolLock__(release=True)
+                self.__remoteHost__ = host
+                self.__getIPcontrolLock__()
 
         # TODO: Add IPv6 support
 
