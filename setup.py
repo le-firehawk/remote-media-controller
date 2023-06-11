@@ -1,8 +1,13 @@
 #!/usr/bin/python3
 
 from setuptools import setup
-with open ("./version.txt") as version_file:
-    version = version_file.read()
+import os
+if os.path.exists("./version.txt"):
+    with open ("./version.txt") as version_file:
+        version = version_file.read()
+else:
+    ## Use latest hardcoded version
+    version="1.0.3"
 
 try:
     setup(
