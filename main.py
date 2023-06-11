@@ -57,7 +57,7 @@ class controller:
             [
                 gui.Text("IP Address: "),
                 gui.InputText(key="remoteIPaddress", default_text=self.__remoteHost__, size=(10,5)),
-                gui.Button("🔄", key="refresh_metadata")
+                gui.Button("🔄", key="refresh_metadata", tooltip="Refresh Metadata")
             ], [
                 gui.Text(self.__metadata__.get("title", "Unknown Track"), key="current_title", size=(25,2))
             ], [
@@ -65,14 +65,14 @@ class controller:
             ], [
                 gui.Text(self.__metadata__.get("album", "Unknown Album"), key="current_album", size=(25,2))
             ], [
-                gui.Button("🔀", key="toggle_shuffle"),
-                gui.Button("🔁", key="repeat_toggle"),
-                gui.Button("⏮︎", key="previous"),
-                gui.Button("⏪︎", key="seek_back"),
+                gui.Button("🔀", key="shuffle_toggle", tooltip=f"Shuffle: {self.__shuffleState__.replace(True, 'On').replace(False, 'Off')}"),
+                gui.Button("🔁", key="repeat_toggle", tooltip=f"Repeat: {self.__repeatState__.capitalize()}"),
+                gui.Button("⏮︎", key="previous", tooltip="Previous Track"),
+                gui.Button("⏪︎", key="seek_back", tooltip="Seek Backwards"),
                 ## Alternate text/background colors to indicate when playback is active
-                gui.Button("⏯︎", key="play_pause", bind_return_key=True, button_color=("white", "black") if self.__playState__.lower().strip() == "playing" else ("black", "white")),
-                gui.Button("⏩︎", key="seek_forward"),
-                gui.Button("⏭︎", key="next")
+                gui.Button("⏯︎", key="play_pause", bind_return_key=True, button_color=("white", "black") if self.__playState__.lower().strip() == "playing" else ("black", "white"), tooltip="Play/Pause"),
+                gui.Button("⏩︎", key="seek_forward", tooltip="Seek Forwards"),
+                gui.Button("⏭︎", key="next", tooltip="Next Track")
             ], [
                 gui.Image(self.__metadata__.get("image", "default.png"), size=(384,384), key="current_image"),
                 gui.Slider(range=(0,100), key="volume_control", orientation="v", default_value=self.__playbackVolume__)
