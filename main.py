@@ -431,7 +431,6 @@ def main(version):
         print("Issue obtaining file lock. Is remote-media-controller already running?")
     except ValueError:
         print("Error loading values from media player. Is nothing playing?")
-        raise
         exit()
     except Exception as e:
         print("Unhandled exception!")
