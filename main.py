@@ -19,7 +19,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/agpl-3.0.html>
 
 import PySimpleGUI as gui
-import subprocess, re, sys, os, hashlib, getpass
+import subprocess, re, sys, os, hashlib
 from paramiko import SSHClient, AutoAddPolicy
 
 # TODO: Read theme from file
@@ -218,24 +218,8 @@ class controller:
                 window["current_artist"].update(self.__metadata__.get("artist", "Unknown Track"))
                 window["current_album"].update(self.__metadata__.get("album", "Unknown Track"))
                 window["current_image"].update(self.__metadata__.get("image", "Unknown Track"))
-            elif gui.WIN_CLOSED:
-                confirm = self.__quitPrompt__()
-                if confirm == 1:
-                    break
         window.close()
         self.__session__.close()
-
-    def __quitPrompt__(self):
-        layout = [[gui.Text("Would you like to quit?")], [gui.Button("Yes", key="yes", bind_return_key=True), gui.Button("No", key="no")], self.__generateCopyrightElement__()]
-        quitWindow = gui.Window(title="Quit?", layout=layout, margins=(100, 50), font="Courier 20")
-
-        event, values = quitWindow.read()
-        quitWindow.close()
-
-        if event == "yes" or gui.WIN_CLOSED:
-            return 1
-        else:
-            return 0
 
     def __updateRepeatState__(self):
         # TODO: Add repeat controls for CMUS
@@ -325,7 +309,7 @@ class controller:
                 command = "-S"
             else:
                 command = command.replace("_", " ")
-        result = self.__commandProcessor__(f"playerctl {command}")
+        result = self.__commandProcessor__(command if self.__mode__ == "cmus" else f"playerctl {command}")
         return result
 
     def __fetchMetadata__(self, **kwargs):
@@ -387,6 +371,13 @@ class controller:
 def load_params(vals):
     ## Build dictionary of parameters
     parameters={}
+
+    ## Default to SSH
+    parameters['mode'] = "ssh"
+
+    ## Presume regular SSH Port
+    parameters['remotePort'] = 22
+
     for i, val in enumerate(vals):
         ## Mode for command execution
         if val in ["--mode", "-m"]:
@@ -436,14 +427,15 @@ def main(version):
     except IndexError:
         print("Missing required parameters!")
         usage()
-    except FileExistsError or FileNotFoundError:
-        pass
+    except FileExistsError:
+        print("Issue obtaining file lock. Is remote-media-controller already running?")
     except ValueError:
         print("Error loading values from media player. Is nothing playing?")
+        raise
         exit()
-    # except Exception as e:
-    #     print("Unhandled exception!")
-    #     print(e)
+    except Exception as e:
+        print("Unhandled exception!")
+        print(e)
 
 if __name__ == "__main__":
     ## Load version information

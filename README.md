@@ -14,6 +14,7 @@ e.g.
     -P, --port      [e.g. 22]
     -u, --user      [e.g. user]
     -p, --password  [e.g. password]
+    -k, --keyfile   [e.g. id_rsa]
 
 ## TODO List:
 - Usage Guide ^
