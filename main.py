@@ -19,7 +19,8 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/agpl-3.0.html>
 
 import PySimpleGUI as gui
-import subprocess, re, sys, os, hashlib
+import subprocess, re, sys, os, hashlib, getpass
+from paramiko import SSHClient, AutoAddPolicy
 
 # TODO: Read theme from file
 gui.theme("black")
@@ -43,7 +44,11 @@ class controller:
         self.__remoteHostPort__ = parameters.get("remotePort", None)
         self.__remoteHostUser__ = parameters.get("remoteUser", None)
         self.__remoteHostPassword__ = parameters.get("password", None)
+        self.__sshKeyfile__ = parameters.get("ssh_keyfile", None)
         self.__mode__ = parameters.get("mode", "cmus")
+
+        if self.__mode__ in ["ssh", "playerctl"]:
+            self.__getSSHSession__()
 
         ## Obtain lockfile on current host IP
         try:
@@ -63,6 +68,43 @@ class controller:
         self.__fetchMetadata__(include_volume=True, include_play_state=True, include_playback_controls=True)
         self.__openWindow__()
         self.__getIPcontrolLock__(release=True)
+
+    def __getSSHSession__(self):
+        ## Create SSH Session
+        self.__session__ = SSHClient()
+        self.__session__.set_missing_host_key_policy(AutoAddPolicy())
+
+        if not self.__sshKeyfile__:
+            sshPrompt = f"SSH Password for {self.__remoteHost__}: "
+        else:
+            sshPrompt = f"Unlock SSH Key {self.__sshKeyfile__}: "
+
+        layout = [
+            [gui.Text(sshPrompt)],
+            [gui.InputText(key="ssh_passphrase", password_char="*", size=(20, 5)),
+                gui.Button(">>", key="submit_passphrase", bind_return_key=True)], 
+            self.__generateCopyrightElement__()
+        ]
+
+        passphraseWindow = gui.Window(title="SSH Passphrase Required", layout=layout, margins=(100, 50), font="Courier 20")
+
+        event, values = passphraseWindow.read()
+
+        if event == "submit_passphrase":
+            ssh_passphrase = values.get("ssh_passphrase", None)
+
+        passphraseWindow.close()
+
+        try:
+            if not self.__sshKeyfile__:
+                self.__session__.connect(self.__remoteHost__, username=self.__remoteHostUser__, look_for_keys=True, password=ssh_passphrase, port=self.__remoteHostPort__, timeout=5)
+            else:
+                self.__session__.connect(self.__remoteHost__, username=self.__remoteHostUser__, look_for_keys=True, key_filename=os.path.join(os.path.expanduser('~'), ".ssh", self.__sshKeyfile__), passphrase=ssh_passphrase, port=self.__remoteHostPort__, timeout=5)
+        except KeyboardInterrupt:
+            print("\nConnection aborted")
+            exit()
+        finally:
+            del ssh_passphrase
 
     def __getIPcontrolLock__(self, **kwargs):
         release_lock = kwargs.get("release", False)
@@ -89,7 +131,7 @@ class controller:
         self.__layout__ = [
             [
                 gui.Text("IP Address: "),
-                gui.InputText(key="remoteIPaddress", default_text=self.__remoteHost__, size=(10,5)),
+                gui.InputText(key="remote_address", default_text=f"{self.__remoteHostUser__}@{self.__remoteHost__}:{self.__remoteHostPort__}", size=(8,5)),
                 gui.Button("🔄", key="refresh_metadata", tooltip="Refresh Metadata")
             ], [
                 gui.Text(self.__metadata__.get("title", "Unknown Track"), key="current_title", size=(25,2))
@@ -132,6 +174,7 @@ class controller:
                 ## Changing volume does not trigger any actions for other events
                 self.__updatePlaybackVolume__(int(self.__values__.get("volume_control", self.__playbackVolume__)))
             elif self.__event__ == "refresh_metadata":
+                self.__updateRemoteHost__(self.__values__.get("remote_address", f"{self.__remoteHostUser__}@{self.__remoteHost__}:{self.__remoteHostPort__}"))
                 self.__fetchMetadata__(include_volume=True, include_play_state=True)
                 ## Update playback information
                 window["current_title"].update(self.__metadata__.get("title", "Unknown Track"))
@@ -169,31 +212,53 @@ class controller:
                     # window["play_pause"].Widget.config(highlightcolor="white")
                     window["play_pause"].update(button_color=("white", "black"))
             elif self.__event__:
-                self.__updateRemoteHost__(self.__values__.get("remoteIPaddress", self.__remoteHost__))
                 self.__sendCommand__(self.__event__)
                 self.__fetchMetadata__()
                 window["current_title"].update(self.__metadata__.get("title", "Unknown Track"))
                 window["current_artist"].update(self.__metadata__.get("artist", "Unknown Track"))
                 window["current_album"].update(self.__metadata__.get("album", "Unknown Track"))
                 window["current_image"].update(self.__metadata__.get("image", "Unknown Track"))
+            elif gui.WIN_CLOSED:
+                confirm = self.__quitPrompt__()
+                if confirm == 1:
+                    break
         window.close()
+        self.__session__.close()
+
+    def __quitPrompt__(self):
+        layout = [[gui.Text("Would you like to quit?")], [gui.Button("Yes", key="yes", bind_return_key=True), gui.Button("No", key="no")], self.__generateCopyrightElement__()]
+        quitWindow = gui.Window(title="Quit?", layout=layout, margins=(100, 50), font="Courier 20")
+
+        event, values = quitWindow.read()
+        quitWindow.close()
+
+        if event == "yes" or gui.WIN_CLOSED:
+            return 1
+        else:
+            return 0
 
     def __updateRepeatState__(self):
         # TODO: Add repeat controls for CMUS
         if self.__mode__ == "cmus":
             pass
         elif self.__mode__ in ["ssh", "playerctl"]:
-            subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl loop {self.__repeatState__}", stdout=subprocess.PIPE, shell=True).communicate()
+            self.__commandProcessor__(f"playerctl loop {self.__repeatState__}")
 
-    def __updateRemoteHost__(self, host):
+    def __updateRemoteHost__(self, remoteAddress):
+        user, address = remoteAddress.split("@")
+        host, port = address.split(":")
+
         if not host:
             return
 
         if self.ipv4_pattern.match(host):
             if self.__remoteHost__ != host:
                 self.__getIPcontrolLock__(release=True)
-                self.__remoteHost__ = host
+                self.__remoteHostUser__, self.__remoteHost__, self.__remoteHostPort__ = user, host, port
                 self.__getIPcontrolLock__()
+                if self.__mode__ in ["ssh", "playerctl"]:
+                    self.__session__.close()
+                    self.__getSSHSession__()
 
         # TODO: Add IPv6 support
 
@@ -207,10 +272,24 @@ class controller:
         self.__playbackVolume__ = volume
 
         if self.__mode__ == "cmus":
-            subprocess.Popen(f"cmus-remote --server {self.__remoteHost__}:{self.__remoteHostPort__} --passwd {self.__remoteHostPassword__} -v {volume}%", stdout=subprocess.PIPE, shell=True).communicate()
+            self.__commandProcessor__(f"-v {volume}%")
         ## SSH or playerctl accepted as modes
         elif self.__mode__ in ["ssh", "playerctl"]:
-            subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} pactl set-sink-volume @DEFAULT_SINK@ {volume}%", stdout=subprocess.PIPE, shell=True).communicate()
+            self.__commandProcessor__(f"pactl set-sink-volume @DEFAULT_SINK@ {volume}%")
+
+    def __commandProcessor__(self, command, **kwargs):
+        strip_output = kwargs.get("strip", True)
+        if self.__mode__ == "cmus":
+            result = [subprocess.Popen(f"cmus-remote --server {self.__remoteHost__}:{self.__remoteHostPort__} --passwd {self.__remoteHostPassword__} {command}", stdout=subprocess.PIPE, shell=True).communicate()[0].decode()]
+        elif self.__mode__ in ["ssh", "playerctl"]:
+            raw = self.__session__.exec_command(command)
+            result = [
+                ## STDOUT
+                raw[1].read().decode("utf8").strip() if strip_output else raw[1].read().decode("utf8"),
+                ## STDERR
+                raw[2].read().decode("utf8").strip() if strip_output else raw[2].read().decode("utf8")
+            ]
+        return result
 
     def __sendCommand__(self, command):
         if not self.__remoteHost__:
@@ -246,11 +325,8 @@ class controller:
                 command = "-S"
             else:
                 command = command.replace("_", " ")
-
-        if self.__mode__ == "cmus":
-            subprocess.Popen(f"cmus-remote --server {self.__remoteHost__}:{self.__remoteHostPort__} --passwd {self.__remoteHostPassword__} {command}", stdout=subprocess.PIPE, shell=True).communicate()
-        elif self.__mode__ in ["ssh", "playerctl"]:
-            subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl {command}", stdout=subprocess.PIPE, shell=True).communicate()
+        result = self.__commandProcessor__(f"playerctl {command}")
+        return result
 
     def __fetchMetadata__(self, **kwargs):
         ## Load fetch options
@@ -266,17 +342,17 @@ class controller:
             ## Run include conditions first, to allow for clean exit
             ## with only_includes
             if include_volume:
-                new_volume = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} pactl get-sink-volume @DEFAULT_SINK@", stdout=subprocess.PIPE, shell=True).communicate()[0].decode().split("%")[0].split(" ")[-1]
+                new_volume = self.__commandProcessor__("pactl get-sink-volume @DEFAULT_SINK@")[0].split("%")[0].split(" ")[-1]
                 if new_volume:
                     self.__playbackVolume__ = new_volume
             if include_play_state:
-                self.__playState__ = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl status", stdout=subprocess.PIPE, shell=True).communicate()[0].decode().lower()
+                self.__playState__ = self.__commandProcessor__("playerctl status")[0].lower()
             if include_playback_controls:
-                self.__repeatState__, self.__shuffleState__ = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl loop; playerctl shuffle", stdout=subprocess.PIPE, shell=True).communicate()[0].decode().split("\n")[:-1]
+                self.__repeatState__, self.__shuffleState__ = self.__commandProcessor__("playerctl loop; playerctl shuffle", strip=False)[0].split("\n")[:-1]
                 self.__shuffleState__ = True if self.__shuffleState__ == "On" else False
             ## Do not make SSH requests if not required
             if not only_includes:
-                metadata = subprocess.Popen(f"ssh -p {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__} playerctl metadata", stdout=subprocess.PIPE, shell=True).communicate()[0].decode()
+                metadata = self.__commandProcessor__("playerctl metadata")[0]
                 # Parse standard metadata set from playerctl
                 for line in metadata.split("\n"):
                     if "xesam:artist" in line:
@@ -296,10 +372,12 @@ class controller:
 
                         ## Relying on stored artwork versions averts unneeded file transfers
                         if not os.path.exists(self.__metadata__["image"]):
-                            subprocess.Popen(f"scp -P {self.__remoteHostPort__} {self.__remoteHostUser__}@{self.__remoteHost__}:{remoteImage} {self.__metadata__['image']}", stdout=subprocess.PIPE, shell=True).communicate()
-                            ## If SCP fails, use default image
+                            file_transfer = self.__session__.open_sftp()
+                            file_transfer.get(remoteImage, self.__metadata__['image'])
+                            ## If SFTP fails, use default image
                             if not os.path.exists(self.__metadata__["image"]):
                                 self.__metadata__["image"] = "default.png"
+                            file_transfer.close()
 
     def __generateCopyrightElement__(self):
         ## Create one-time copyright element
@@ -313,22 +391,24 @@ def load_params(vals):
         ## Mode for command execution
         if val in ["--mode", "-m"]:
             parameters['mode'] = vals[i+1]
-            del vals[i+1]
         ## IP address of host playing media
         elif val in ["--ip", "-h"]:
             parameters['remoteHost'] = vals[i+1]
-            del vals[i+1]
         ## Port for CMUS or SSH connections
         elif val in ["--port", "-P"]:
             parameters['remotePort'] = vals[i+1]
-            del vals[i+1]
         ## User for SSH connections
         elif val in ["--user", "-u"]:
             parameters['remoteUser'] = vals[i+1]
-            del vals[i+1]
         ## Password for CMUS-remote server, not SSH
         elif val in ["--password", "-p"]:
             parameters['password'] = vals[i+1]
+        ## SSH Keyfile for session
+        elif val in ["--keyfile", "-k"]:
+            parameters['ssh_keyfile'] = vals[i+1]
+
+        ## Prevent checks on parameter values
+        if val.startswith("-"):
             del vals[i+1]
     if len(parameters) == 0:
         usage()
@@ -346,14 +426,24 @@ def usage():
     print(f"    -P, --port      [e.g. 22]")
     print(f"    -u, --user      [e.g. user]")
     print(f"    -p, --password  [e.g. password]")
+    print(f"    -k, --keyfile   [e.g. id_rsa]")
 
 def main(version):
     try:
         parameters = load_params(sys.argv)
         controllerInstance = controller(parameters, version)
+        controllerInstance.__session__.close()
     except IndexError:
         print("Missing required parameters!")
         usage()
+    except FileExistsError or FileNotFoundError:
+        pass
+    except ValueError:
+        print("Error loading values from media player. Is nothing playing?")
+        exit()
+    # except Exception as e:
+    #     print("Unhandled exception!")
+    #     print(e)
 
 if __name__ == "__main__":
     ## Load version information
